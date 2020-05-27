@@ -32,7 +32,7 @@ def FFT_smoothing(y,prediction,smootnes=0.01):
         phase = np.angle(x_freqdom[i])          # phase
         restored_sig += ampli * np.cos(2 * np.pi * freqs[i] * t + phase)
     without_trend=y-restored_sig[:n]+mena
-    trend_prediction=restored_sig[n:]
+    trend_prediction=restored_sig[n:]+mena
     #Returning just rela part I hope this is correct
     #Returning data without trend and just trend
     return(without_trend,trend_prediction)
