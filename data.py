@@ -145,19 +145,23 @@ Extracted that the trend and we normalized differently extracted trends.
 Now we need to follow the tutorial here and use multivariate_data()  and implemented  it for our needs.
 '''
 
-'''
-past_history = 720
-future_target = 72
-STEP = 6
+TRAIN_SPLIT = 32
+past_history = 20
+future_target = 18
+STEP = 2
 
-x_train_single, y_train_single = multivariate_data(dataset, dataset[:, 1], 0,
+print(len(M3Month_data_withouttrend))
+
+x_train_single, y_train_single = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1], 0,
                                                    TRAIN_SPLIT, past_history,
                                                    future_target, STEP,
                                                    single_step=True)
 
-x_val_single, y_val_single = multivariate_data(dataset, dataset[:, 1],
+#I am not sure if we need this: x_val_single, y_val_single
+
+x_val_single, y_val_single = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1],
                                                TRAIN_SPLIT, None, past_history,
                                                future_target, STEP,
                                                single_step=True)
 
-'''
+print(x_train_single, y_train_single)
