@@ -8,6 +8,7 @@ from pandas import ExcelWriter
 from pandas import ExcelFile
 from sklearn.preprocessing import MinMaxScaler
 
+
 # Change these to tweak the model
 TRAIN_SPLIT = 33
 past_history = 18
