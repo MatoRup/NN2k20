@@ -1,4 +1,4 @@
-#import tensorflow as tf
+import tensorflow as tf
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,6 +7,18 @@ import pandas as pd
 from pandas import ExcelWriter
 from pandas import ExcelFile
 from sklearn.preprocessing import MinMaxScaler
+
+# Change these to tweak the model
+TRAIN_SPLIT = 33
+past_history = 18
+future_target = 18
+STEP = 1
+
+tf.random.set_seed(13)
+BUFFER_SIZE = 15000
+BATCH_SIZE = 10
+EPOCHS = 15
+STEPS_PER_EPOCH = 200
 
 def polinomial_smoothing(y,prediction,degree,average=True):
     """
@@ -71,9 +83,9 @@ def FFT_smoothing(y,prediction,pol_smoothing=False,smootnes=0.01):
     #Returning data without trend and just trend
     return(without_trend,trend_prediction)
 
-
-def multivariate_data(dataset, target, start_index, end_index, history_size,target_size, step, single_step=False):
-    #copy of tnesorflow fuction for inputing data
+# Windowing task
+def multivariate_data(dataset, target, start_index, end_index, history_size, target_size, step):
+    
     data = []
     labels = []
 
@@ -81,17 +93,48 @@ def multivariate_data(dataset, target, start_index, end_index, history_size,targ
     if end_index is None:
         end_index = len(dataset) - target_size
 
+    print(start_index, end_index)
     for i in range(start_index, end_index):
         indices = range(i-history_size, i, step)
         data.append(dataset[indices])
 
-        if single_step:
-          labels.append(target[i+target_size])
-        else:
-          labels.append(target[i:i+target_size])
+        print(target[i:i+target_size])
+        labels.append(target[i:i+target_size])
 
     return np.array(data), np.array(labels)
 
+#Plotting the loss
+def plot_train_history(history, title):
+    loss = history.history['loss']
+    # val_loss = history.history['val_loss']
+
+    epochs = range(len(loss))
+
+    plt.figure()
+
+    plt.plot(epochs, loss, 'b', label='Training loss')
+    # plt.plot(epochs, val_loss, 'r', label='Validation loss')
+    plt.title(title)
+    plt.legend()
+
+    plt.show()
+
+# create the time steps required for multi_step_plot
+def create_time_steps(length):
+  return list(range(-length, 0))
+
+#creates the multi step plot
+def multi_step_plot(history, true_future, prediction):
+    plt.figure(figsize=(12, 6))
+    num_in = create_time_steps(len(history))
+    num_out = len(true_future)
+
+    plt.plot(num_in, np.array(history[:, 1]), label='History')
+    plt.plot(np.arange(num_out)/STEP, np.array(true_future), 'bo', label='True Future')
+    if prediction.any():
+        plt.plot(np.arange(num_out)/STEP, np.array(prediction), 'ro', label='Predicted Future')
+    plt.legend(loc='upper left')
+    plt.show()
 
 M3Year = pd.read_excel('M3C.xls',sheet_name='M3Year')
 M3Quart= pd.read_excel('M3C.xls',sheet_name='M3Quart')
@@ -137,7 +180,7 @@ scaler = scaler.fit(values)
 normalized = scaler.transform(values)
 M3Month_data_withouttrend = normalized.reshape(tre,-1)
 
-print(M3Month_data_withouttrend)
+# print(M3Month_data_withouttrend)
 '''
 If I didn't do any mistake is after here our data in the same form as dataset in
 https://colab.research.google.com/github/tensorflow/docs/blob/master/site/en/tutorials/structured_data/time_series.ipynb#scrollTo=eJUeWDqploCt
@@ -145,23 +188,33 @@ Extracted that the trend and we normalized differently extracted trends.
 Now we need to follow the tutorial here and use multivariate_data()  and implemented  it for our needs.
 '''
 
-TRAIN_SPLIT = 32
-past_history = 20
-future_target = 18
-STEP = 2
-
-print(len(M3Month_data_withouttrend))
-
-x_train_single, y_train_single = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1], 0,
+x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1], 0,
                                                    TRAIN_SPLIT, past_history,
-                                                   future_target, STEP,
-                                                   single_step=True)
+                                                   future_target, STEP)
 
-#I am not sure if we need this: x_val_single, y_val_single
+print ('Single window of past history : {}'.format(x_train_multi[0].shape))
 
-x_val_single, y_val_single = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1],
-                                               TRAIN_SPLIT, None, past_history,
-                                               future_target, STEP,
-                                               single_step=True)
+train_data_multi = tf.data.Dataset.from_tensor_slices((x_train_multi, y_train_multi))
+train_data_multi = train_data_multi.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
 
-print(x_train_single, y_train_single)
+#Create and compile LSTM model
+multi_step_model = tf.keras.models.Sequential()
+multi_step_model.add(tf.keras.layers.LSTM(32, return_sequences=True, input_shape=x_train_multi.shape[-2:]))
+multi_step_model.add(tf.keras.layers.LSTM(16, activation='relu'))
+multi_step_model.add(tf.keras.layers.Dense(18))
+
+multi_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0), loss='mae')
+
+#numerical results (first ten)
+for x, y in train_data_multi.take(10):
+  print (multi_step_model.predict(x).shape)
+
+#training
+multi_step_history = multi_step_model.fit(train_data_multi, epochs=EPOCHS, steps_per_epoch=STEPS_PER_EPOCH)
+
+#Loss graph
+plot_train_history(multi_step_history, 'Multi-Step Training and validation loss')
+
+#predictions overlayed with actual predictions (first three)
+for x, y in train_data_multi.take(2):
+    multi_step_plot(x[0], y[0], multi_step_model.predict(x)[0])
