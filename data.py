@@ -30,7 +30,7 @@ def polinomial_smoothing(y,prediction,degree,average=True):
         degree -= 1
         pol += 1
         if degree == -1:
-          return(y-trend+mean,trend_prediction)
+          return y-trend+mean,trend_prediction
           break;
 
 def FFT_smoothing(y,prediction,pol_smoothing=False,smootnes=0.01):
@@ -69,7 +69,7 @@ def FFT_smoothing(y,prediction,pol_smoothing=False,smootnes=0.01):
     trend_prediction = restored_sig[n:] + pol_trend
     #Returning just rela part I hope this is correct
     #Returning data without trend and just trend
-    return(without_trend,trend_prediction)
+    return without_trend,trend_prediction
 
 
 def multivariate_data(dataset, target, start_index, end_index, history_size,target_size, step, single_step=False):
@@ -150,7 +150,6 @@ past_history = 20
 future_target = 18
 STEP = 2
 
-print(len(M3Month_data_withouttrend))
 
 x_train_single, y_train_single = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1], 0,
                                                    TRAIN_SPLIT, past_history,
@@ -164,4 +163,4 @@ x_val_single, y_val_single = multivariate_data(M3Month_data_withouttrend, M3Mont
                                                future_target, STEP,
                                                single_step=True)
 
-print(x_train_single, y_train_single)
+print(len(x_train_single), len(y_train_single))
