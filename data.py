@@ -10,7 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 # Change these to tweak the model
-TRAIN_SPLIT = 33
+TRAIN_SPLIT = 32
 past_history = 18
 future_target = 18
 STEP = 1
@@ -20,6 +20,11 @@ BUFFER_SIZE = 15000
 BATCH_SIZE = 10
 EPOCHS = 15
 STEPS_PER_EPOCH = 200
+
+#ROW which we are predicting
+ROW = 4
+#Numbers of ROWS from which we are predicting. For now just the micro part with 68 lenght.
+MICRO = 277
 
 def polinomial_smoothing(y,prediction,degree,average=True):
     """
@@ -94,15 +99,14 @@ def multivariate_data(dataset, target, start_index, end_index, history_size, tar
     if end_index is None:
         end_index = len(dataset) - target_size
 
-    print(start_index, end_index)
     for i in range(start_index, end_index):
         indices = range(i-history_size, i, step)
         data.append(dataset[indices])
 
-        print(target[i:i+target_size])
         labels.append(target[i:i+target_size])
 
     return np.array(data), np.array(labels)
+
 
 #Plotting the loss
 def plot_train_history(history, title):
@@ -130,12 +134,22 @@ def multi_step_plot(history, true_future, prediction):
     num_in = create_time_steps(len(history))
     num_out = len(true_future)
 
-    plt.plot(num_in, np.array(history[:, 1]), label='History')
+    plt.plot(num_in, np.array(history), label='History')
     plt.plot(np.arange(num_out)/STEP, np.array(true_future), 'bo', label='True Future')
     if prediction.any():
         plt.plot(np.arange(num_out)/STEP, np.array(prediction), 'ro', label='Predicted Future')
     plt.legend(loc='upper left')
     plt.show()
+
+#I think this is the function with which we should measure our accuracy.
+#You can find it here http://www.forecastingprinciples.com/paperpdf/Makridakia-The%20M3%20Competition.pdf
+def MAPE(X,F):
+    ave = np.array([])
+
+    for x,f in zip(X,F):
+        ave = np.append(ave,np.average(2*np.absolute(x-f)/(np.absolute(x)+np.absolute(f)))*100)
+    return np.average(ave)
+
 
 M3Year = pd.read_excel('M3C.xls',sheet_name='M3Year')
 M3Quart= pd.read_excel('M3C.xls',sheet_name='M3Quart')
@@ -149,10 +163,10 @@ M3Other_data=M3Other.iloc[:, 6:].to_numpy()
 
 #277 is the number of rows for MICRO data and tre is number of data that we can train on
 
-tre = 50
-M3Month_data_test=M3Month_data[:277,tre:]
-M3Month_data_trend_prediction= np.zeros(shape=(277,18))
-M3Month_data_withouttrend=np.zeros(shape=(277,tre))
+Total_lenght=TRAIN_SPLIT + past_history + future_target
+
+M3Month_data_trend_prediction= np.zeros(shape=(MICRO,future_target))
+M3Month_data_withouttrend=np.zeros(shape=(MICRO,Total_lenght))
 
 '''
 When we will test the network we can change
@@ -163,25 +177,27 @@ When we will test the network we can change
 
 '''
 
+Detrending_lenght = TRAIN_SPLIT + past_history
 
-for z in range(277):
+for z in range(MICRO):
 	#num = M3Year.iloc[z]["N"]-M3Year.iloc[z]["NF"]
-    num = tre
-    without_trend,trend = FFT_smoothing(M3Month_data[z,:num],18)
-    M3Month_data_withouttrend[z,:] = without_trend
+    without_trend,trend = FFT_smoothing(M3Month_data[z,:Detrending_lenght],future_target,pol_smoothing=True)
+    M3Month_data_withouttrend[z,:Detrending_lenght] = without_trend
+    M3Month_data_withouttrend[z,Detrending_lenght:] =  M3Month_data[z,Detrending_lenght:Total_lenght] - trend
     M3Month_data_trend_prediction[z,:] = trend
     #at the end when we will check the data we have add M3Year_data_trand_prediction to NN for real results
 
 M3Month_data_withouttrend=np.transpose(M3Month_data_withouttrend)
-
 values = M3Month_data_withouttrend
-values= values.reshape(-1,1)
+values_tre = M3Month_data_withouttrend[:Detrending_lenght,:]
+values_tre = values_tre.reshape(-1,1)
+values = values.reshape(-1,1)
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaler = scaler.fit(values)
+scaler = scaler.fit(values_tre)
 normalized = scaler.transform(values)
-M3Month_data_withouttrend = normalized.reshape(tre,-1)
+M3Month_data_withouttrend = normalized.reshape(Total_lenght,-1)
 
-# print(M3Month_data_withouttrend)
+
 '''
 If I didn't do any mistake is after here our data in the same form as dataset in
 https://colab.research.google.com/github/tensorflow/docs/blob/master/site/en/tutorials/structured_data/time_series.ipynb#scrollTo=eJUeWDqploCt
@@ -189,14 +205,25 @@ Extracted that the trend and we normalized differently extracted trends.
 Now we need to follow the tutorial here and use multivariate_data()  and implemented  it for our needs.
 '''
 
-x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:, 1], 0,
+x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:,ROW], 0,
                                                    TRAIN_SPLIT, past_history,
                                                    future_target, STEP)
 
+x_val_multi, y_val_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:,ROW],
+                                             TRAIN_SPLIT, Detrending_lenght+1 , past_history,
+                                             future_target, STEP)
+
+#print(M3Month_data_withouttrend)
+#print(M3Month_data_withouttrend[:, 1])
+#print(x_val_multi,y_val_multi)
+#print(len(x_val_multi[0]),len(y_val_multi[0]))
 print ('Single window of past history : {}'.format(x_train_multi[0].shape))
 
 train_data_multi = tf.data.Dataset.from_tensor_slices((x_train_multi, y_train_multi))
 train_data_multi = train_data_multi.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
+
+val_data_multi = tf.data.Dataset.from_tensor_slices((x_val_multi, y_val_multi))
+val_data_multi = val_data_multi.batch(BATCH_SIZE).repeat()
 
 #Create and compile LSTM model
 multi_step_model = tf.keras.models.Sequential()
@@ -217,5 +244,15 @@ multi_step_history = multi_step_model.fit(train_data_multi, epochs=EPOCHS, steps
 plot_train_history(multi_step_history, 'Multi-Step Training and validation loss')
 
 #predictions overlayed with actual predictions (first three)
-for x, y in train_data_multi.take(2):
-    multi_step_plot(x[0], y[0], multi_step_model.predict(x)[0])
+
+network_prediction = multi_step_model.predict(x_val_multi)[0]
+network_prediction = network_prediction.reshape(-1,1)
+network_prediction = scaler.inverse_transform(network_prediction)
+network_prediction = network_prediction.reshape(multi_step_model.predict(x)[0].shape)
+real_prediction = network_prediction + M3Month_data_trend_prediction[ROW,:]
+
+multi_step_plot(M3Month_data[ROW,:Detrending_lenght], M3Month_data[ROW,Detrending_lenght:Total_lenght], real_prediction)
+
+
+
+print ('Our final accuracy is : {:0.2f}'.format(MAPE(M3Month_data[ROW,Detrending_lenght:Total_lenght],real_prediction)))
