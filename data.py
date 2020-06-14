@@ -8,23 +8,25 @@ from pandas import ExcelWriter
 from pandas import ExcelFile
 from sklearn.preprocessing import MinMaxScaler
 
+#Setting the seed for reproducibility
+tf.random.set_seed(13)
 
-# Change these to tweak the model
 TRAIN_SPLIT = 32
 past_history = 18
 future_target = 18
 STEP = 1
 
-tf.random.set_seed(13)
+# Change these to tweak the model
 BUFFER_SIZE = 15000
 BATCH_SIZE = 10
-EPOCHS = 15
+EPOCHS = 10
 STEPS_PER_EPOCH = 200
 
 #ROW which we are predicting
-ROW = 4
-#Numbers of ROWS from which we are predicting. For now just the micro part with 68 lenght.
-MICRO = 277
+ROW = 1
+
+#Numbers of ROWS from which we are predicting. For now just the micro part with the first 68 data points.
+MICRO = 475
 
 def polinomial_smoothing(y,prediction,degree,average=True):
     """
@@ -135,11 +137,19 @@ def multi_step_plot(history, true_future, prediction):
     num_out = len(true_future)
 
     plt.plot(num_in, np.array(history), label='History')
-    plt.plot(np.arange(num_out)/STEP, np.array(true_future), 'bo', label='True Future')
+    plt.plot(np.arange(num_out)/STEP, np.array(true_future), 'bo--', label='True Future')
     if prediction.any():
-        plt.plot(np.arange(num_out)/STEP, np.array(prediction), 'ro', label='Predicted Future')
+        plt.plot(np.arange(num_out)/STEP, np.array(prediction), 'ro:', label='Predicted Future')
     plt.legend(loc='upper left')
     plt.show()
+
+def print_results(name, true_future, predicted_future):
+    f = open(name, "w")
+    count = 0
+    for item in true_future:
+        f.write("{} {}\n".format(item, predicted_future[count]))
+        count += 1
+    f.close()
 
 #I think this is the function with which we should measure our accuracy.
 #You can find it here http://www.forecastingprinciples.com/paperpdf/Makridakia-The%20M3%20Competition.pdf
@@ -213,12 +223,6 @@ x_val_multi, y_val_multi = multivariate_data(M3Month_data_withouttrend, M3Month_
                                              TRAIN_SPLIT, Detrending_lenght+1 , past_history,
                                              future_target, STEP)
 
-#print(M3Month_data_withouttrend)
-#print(M3Month_data_withouttrend[:, 1])
-#print(x_val_multi,y_val_multi)
-#print(len(x_val_multi[0]),len(y_val_multi[0]))
-print ('Single window of past history : {}'.format(x_train_multi[0].shape))
-
 train_data_multi = tf.data.Dataset.from_tensor_slices((x_train_multi, y_train_multi))
 train_data_multi = train_data_multi.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
 
@@ -234,7 +238,7 @@ multi_step_model.add(tf.keras.layers.Dense(18))
 multi_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0), loss='mae')
 
 #numerical results (first ten)
-for x, y in train_data_multi.take(10):
+for x, y in train_data_multi.take(1):
   print (multi_step_model.predict(x).shape)
 
 #training
@@ -243,16 +247,17 @@ multi_step_history = multi_step_model.fit(train_data_multi, epochs=EPOCHS, steps
 #Loss graph
 plot_train_history(multi_step_history, 'Multi-Step Training and validation loss')
 
-#predictions overlayed with actual predictions (first three)
-
+#predictions overlayed with actual predictions
 network_prediction = multi_step_model.predict(x_val_multi)[0]
 network_prediction = network_prediction.reshape(-1,1)
 network_prediction = scaler.inverse_transform(network_prediction)
 network_prediction = network_prediction.reshape(multi_step_model.predict(x)[0].shape)
 real_prediction = network_prediction + M3Month_data_trend_prediction[ROW,:]
 
-multi_step_plot(M3Month_data[ROW,:Detrending_lenght], M3Month_data[ROW,Detrending_lenght:Total_lenght], real_prediction)
+#plotting the final prediction
+multi_step_plot(M3Month_data[ROW, :Detrending_lenght], M3Month_data[ROW, Detrending_lenght:Total_lenght], real_prediction)
 
+#printing the results to output.txt
+print_results("output.txt", M3Month_data[ROW, Detrending_lenght:Total_lenght], real_prediction)
 
-
-print ('Our final accuracy is : {:0.2f}'.format(MAPE(M3Month_data[ROW,Detrending_lenght:Total_lenght],real_prediction)))
+print ('Our final accuracy is : {:0.2f}%'.format(MAPE(M3Month_data[ROW,Detrending_lenght:Total_lenght],real_prediction)))
