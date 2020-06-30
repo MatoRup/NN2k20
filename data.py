@@ -248,8 +248,8 @@ multi_step_history = multi_step_model.fit(train_data_multi, epochs=EPOCHS, steps
 plot_train_history(multi_step_history, 'Multi-Step Training and validation loss')
 
 #predictions overlayed with actual predictions
-network_prediction = multi_step_model.predict(x_val_multi)[0]
-network_prediction = network_prediction.reshape(-1,1)
+network_prediction_start = multi_step_model.predict(x_val_multi)[0]
+network_prediction = network_prediction_start.reshape(-1,1)
 network_prediction = scaler.inverse_transform(network_prediction)
 network_prediction = network_prediction.reshape(network_prediction_start.shape)
 real_prediction = np.transpose(network_prediction) + M3Month_data_trend_prediction
@@ -259,6 +259,6 @@ for Z in range(10):
 
 
 #printing the results to output.txt
-print_results("output.txt", M3Month_data[ROW, Detrending_lenght:Total_lenght], real_prediction)
+print_results("output.txt", M3Month_data[:MICRO, Detrending_lenght:Total_lenght], real_prediction)
 
 print ('Our final accuracy is : {:0.2f}'.format(MAPE(M3Month_data[:,Detrending_lenght:Total_lenght],real_prediction)))
