@@ -7,6 +7,8 @@ import pandas as pd
 from pandas import ExcelWriter
 from pandas import ExcelFile
 from sklearn.preprocessing import MinMaxScaler
+from keras.layers import RepeatVector
+from keras.layers import TimeDistributed
 
 
 # Change these to tweak the model
@@ -17,12 +19,10 @@ STEP = 1
 
 tf.random.set_seed(13)
 BUFFER_SIZE = 15000
-BATCH_SIZE = 10
-EPOCHS = 15
+BATCH_SIZE = 14
+EPOCHS = 10
 STEPS_PER_EPOCH = 200
 
-#ROW which we are predicting
-ROW = 4
 #Numbers of ROWS from which we are predicting. For now just the micro part with 68 lenght.
 MICRO = 277
 
@@ -163,10 +163,10 @@ M3Other_data=M3Other.iloc[:, 6:].to_numpy()
 
 #277 is the number of rows for MICRO data and tre is number of data that we can train on
 
-Total_lenght=TRAIN_SPLIT + past_history + future_target
+Total_lenght = TRAIN_SPLIT + past_history + future_target
 
-M3Month_data_trend_prediction= np.zeros(shape=(MICRO,future_target))
-M3Month_data_withouttrend=np.zeros(shape=(MICRO,Total_lenght))
+M3Month_data_trend_prediction = np.zeros(shape=(MICRO,future_target))
+M3Month_data_withouttrend = np.zeros(shape=(MICRO,Total_lenght))
 
 '''
 When we will test the network we can change
@@ -187,7 +187,8 @@ for z in range(MICRO):
     M3Month_data_trend_prediction[z,:] = trend
     #at the end when we will check the data we have add M3Year_data_trand_prediction to NN for real results
 
-M3Month_data_withouttrend=np.transpose(M3Month_data_withouttrend)
+
+M3Month_data_withouttrend = np.transpose(M3Month_data_withouttrend)
 values = M3Month_data_withouttrend
 values_tre = M3Month_data_withouttrend[:Detrending_lenght,:]
 values_tre = values_tre.reshape(-1,1)
@@ -205,11 +206,10 @@ Extracted that the trend and we normalized differently extracted trends.
 Now we need to follow the tutorial here and use multivariate_data()  and implemented  it for our needs.
 '''
 
-x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:,ROW], 0,
+x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend, 0,
                                                    TRAIN_SPLIT, past_history,
                                                    future_target, STEP)
-
-x_val_multi, y_val_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend[:,ROW],
+x_val_multi, y_val_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend,
                                              TRAIN_SPLIT, Detrending_lenght+1 , past_history,
                                              future_target, STEP)
 
@@ -225,13 +225,14 @@ train_data_multi = train_data_multi.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZ
 val_data_multi = tf.data.Dataset.from_tensor_slices((x_val_multi, y_val_multi))
 val_data_multi = val_data_multi.batch(BATCH_SIZE).repeat()
 
+
 #Create and compile LSTM model
 multi_step_model = tf.keras.models.Sequential()
-multi_step_model.add(tf.keras.layers.LSTM(32, return_sequences=True, input_shape=x_train_multi.shape[-2:]))
-multi_step_model.add(tf.keras.layers.LSTM(16, activation='relu'))
-multi_step_model.add(tf.keras.layers.Dense(18))
+multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, input_shape=x_train_multi.shape[-2:]))
+multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, activation='relu'))
+multi_step_model.add(tf.keras.layers.Dense(MICRO))
 
-multi_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0), loss='mae')
+multi_step_model.compile(optimizer='adam', loss='mse')
 
 #numerical results (first ten)
 for x, y in train_data_multi.take(10):
@@ -245,14 +246,15 @@ plot_train_history(multi_step_history, 'Multi-Step Training and validation loss'
 
 #predictions overlayed with actual predictions (first three)
 
-network_prediction = multi_step_model.predict(x_val_multi)[0]
-network_prediction = network_prediction.reshape(-1,1)
+network_prediction_start = multi_step_model.predict(x_val_multi)[0]
+network_prediction = network_prediction_start.reshape(-1,1)
 network_prediction = scaler.inverse_transform(network_prediction)
-network_prediction = network_prediction.reshape(multi_step_model.predict(x)[0].shape)
-real_prediction = network_prediction + M3Month_data_trend_prediction[ROW,:]
+network_prediction = network_prediction.reshape(network_prediction_start.shape)
+real_prediction = np.transpose(network_prediction) + M3Month_data_trend_prediction
 
-multi_step_plot(M3Month_data[ROW,:Detrending_lenght], M3Month_data[ROW,Detrending_lenght:Total_lenght], real_prediction)
+for Z in range(10):
+    multi_step_plot(M3Month_data[Z,:Detrending_lenght], M3Month_data[Z,Detrending_lenght:Total_lenght], real_prediction[Z,:])
 
 
 
-print ('Our final accuracy is : {:0.2f}'.format(MAPE(M3Month_data[ROW,Detrending_lenght:Total_lenght],real_prediction)))
+print ('Our final accuracy is : {:0.2f}'.format(MAPE(M3Month_data[:,Detrending_lenght:Total_lenght],real_prediction)))
