@@ -149,8 +149,7 @@ def print_results(name, true_future, predicted_future):
         count += 1
     f.close()
 
-#I think this is the function with which we should measure our accuracy.
-#You can find it here http://www.forecastingprinciples.com/paperpdf/Makridakia-The%20M3%20Competition.pdf
+#Mape function
 def MAPE(X,F):
     ave = np.array([])
 
