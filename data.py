@@ -7,16 +7,15 @@ import pandas as pd
 from pandas import ExcelWriter
 from pandas import ExcelFile
 from sklearn.preprocessing import MinMaxScaler
-from keras.layers import RepeatVector
-from keras.layers import TimeDistributed
 
-#Setting the seed for reproducibility
-tf.random.set_seed(13)
 
 TRAIN_SPLIT = 32
 past_history = 18
 future_target = 18
 STEP = 1
+
+#Setting the seed for reproducibility
+tf.random.set_seed(13)
 
 # Change these to tweak the model
 BUFFER_SIZE = 15000
@@ -156,47 +155,30 @@ def MAPE(X,F):
     ave = np.array([])
 
     for x,f in zip(X,F):
-        ave = np.append(ave,np.average(2*np.absolute(x-f)/(np.absolute(x)+np.absolute(f)))*100)
+        ave = np.append(ave,np.average(2*np.absolute(x-f)/(x+f))*100)
     return np.average(ave)
 
 
-M3Year = pd.read_excel('M3C.xls',sheet_name='M3Year')
-M3Quart= pd.read_excel('M3C.xls',sheet_name='M3Quart')
+#Importing data
 M3Month = pd.read_excel('M3C.xls',sheet_name='M3Month')
-M3Other = pd.read_excel('M3C.xls',sheet_name='M3Other')
-
-M3Year_data=M3Year.iloc[:, 6:].to_numpy()
-M3Quart_data=M3Quart.iloc[:, 6:].to_numpy()
 M3Month_data=M3Month.iloc[:, 6:].to_numpy()
-M3Other_data=M3Other.iloc[:, 6:].to_numpy()
-
-#277 is the number of rows for MICRO data and tre is number of data that we can train on
 
 Total_lenght = TRAIN_SPLIT + past_history + future_target
 
 M3Month_data_trend_prediction = np.zeros(shape=(MICRO,future_target))
 M3Month_data_withouttrend = np.zeros(shape=(MICRO,Total_lenght))
 
-'''
-When we will test the network we can change
-1.) smoothness rate of FFT_smoothing (0,1)
-2) we have turn on also polinomial_smoothing in smoothness rate of FFT_smoothing and
-3) we can change smoothing from FFT_smoothing to just polinomial_smoothing
-(In polynomial smoothing you can set the order of polynomial that you can fit to data).
-
-'''
-
 Detrending_lenght = TRAIN_SPLIT + past_history
 
+#Detrending of the data
 for z in range(MICRO):
-	#num = M3Year.iloc[z]["N"]-M3Year.iloc[z]["NF"]
     without_trend,trend = FFT_smoothing(M3Month_data[z,:Detrending_lenght],future_target,pol_smoothing=True)
     M3Month_data_withouttrend[z,:Detrending_lenght] = without_trend
     M3Month_data_withouttrend[z,Detrending_lenght:] =  M3Month_data[z,Detrending_lenght:Total_lenght] - trend
     M3Month_data_trend_prediction[z,:] = trend
     #at the end when we will check the data we have add M3Year_data_trand_prediction to NN for real results
 
-
+#Normalization
 M3Month_data_withouttrend = np.transpose(M3Month_data_withouttrend)
 values = M3Month_data_withouttrend
 values_tre = M3Month_data_withouttrend[:Detrending_lenght,:]
@@ -208,13 +190,7 @@ normalized = scaler.transform(values)
 M3Month_data_withouttrend = normalized.reshape(Total_lenght,-1)
 
 
-'''
-If I didn't do any mistake is after here our data in the same form as dataset in
-https://colab.research.google.com/github/tensorflow/docs/blob/master/site/en/tutorials/structured_data/time_series.ipynb#scrollTo=eJUeWDqploCt
-Extracted that the trend and we normalized differently extracted trends.
-Now we need to follow the tutorial here and use multivariate_data()  and implemented  it for our needs.
-'''
-
+#windowing
 x_train_multi, y_train_multi = multivariate_data(M3Month_data_withouttrend, M3Month_data_withouttrend, 0,
                                                    TRAIN_SPLIT, past_history,
                                                    future_target, STEP)
@@ -231,15 +207,11 @@ val_data_multi = val_data_multi.batch(BATCH_SIZE).repeat()
 
 #Create and compile LSTM model
 multi_step_model = tf.keras.models.Sequential()
-multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, input_shape=x_train_multi.shape[-2:]))
-multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, activation='relu'))
+multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, input_shape=x_train_multi.shape[-2:], activation='tanh'))
+multi_step_model.add(tf.keras.layers.LSTM(200, return_sequences=True, activation='tanh'))
 multi_step_model.add(tf.keras.layers.Dense(MICRO))
-
 multi_step_model.compile(optimizer='adam', loss='mse')
 
-#numerical results (first ten)
-for x, y in train_data_multi.take(1):
-  print (multi_step_model.predict(x).shape)
 
 #training
 multi_step_history = multi_step_model.fit(train_data_multi, epochs=EPOCHS, steps_per_epoch=STEPS_PER_EPOCH)
@@ -254,7 +226,7 @@ network_prediction = scaler.inverse_transform(network_prediction)
 network_prediction = network_prediction.reshape(network_prediction_start.shape)
 real_prediction = np.transpose(network_prediction) + M3Month_data_trend_prediction
 
-for Z in range(10):
+for Z in range(5):
     multi_step_plot(M3Month_data[Z,:Detrending_lenght], M3Month_data[Z,Detrending_lenght:Total_lenght], real_prediction[Z,:])
 
 
